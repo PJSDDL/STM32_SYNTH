@@ -1,0 +1,54 @@
+
+#define PI 3.1415926
+#define FS 20000.0
+
+struct ADSR
+{
+		unsigned char ADSR_enable;
+    unsigned char ADSR_statu;
+    unsigned int ADSR_count;
+    unsigned char ADSR_div;
+    unsigned char A_time;
+    unsigned char D_time;
+    unsigned char R_time;
+    unsigned char A_speed;
+    unsigned char D_speed;
+    unsigned char R_speed;
+    unsigned char ADSR_in;  //ADSR输入触发信号，为1时产生ADSR波形，为0时不产生波形
+    unsigned char ADSR_reset;  //ADSR复位信号，只要为1就让ADSR状态为Attack
+    unsigned int ADSR_out;
+
+};
+
+struct VCO
+{
+    char VCO_wavetype;
+    short phase;
+    short idx;
+    short VCO_freq;
+    short VCO_Out;
+};
+
+struct VCF
+{
+    short VCF_BW;
+    short VCF_freq;
+    int VCF_A;
+    int VCF_B;
+    int VCF_C;
+    int VCF_Out;
+    int VCF_reg1;
+    int VCF_reg2;
+    int VCF_type;
+};
+
+void ADSR_default(struct ADSR *ADSR_1);
+void VCO_gen(struct VCO *VCO_1);
+void VCF_set(struct VCF *VCF_1);
+void VCF_fast_set(struct VCF *VCF_1);
+void VCF_gen(short VCO_Out, struct VCF *VCF_1);
+int SUB_synth_default(struct VCO *VCO_1, struct VCF *VCF_1, struct ADSR *ADSR_1);
+int SUB_synth_drum(struct VCO *VCO_1, struct ADSR *ADSR_1, struct VCF *VCF_1, struct ADSR *ADSR_2);
+
+//音色预制
+void Drum_init(struct VCO *VCO_1, struct ADSR *ADSR_1, struct VCF *VCF_1, struct ADSR *ADSR_2);

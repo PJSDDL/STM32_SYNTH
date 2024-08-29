@@ -1,0 +1,244 @@
+#include  <math.h>
+#include "stdio.h"
+#include "delay.h"
+#include "sys.h"
+#include "oled.h"
+#include "synth.h"
+#include "MIDI.h"
+#include "bmp.h"
+#include "stm32f10x_tim.h"
+#include "stm32f10x_dac.h"
+
+
+//TIM1起计时作用，振荡源来自芯片内部
+//arr：自动重装值
+//psc：时钟预分频数
+void TIM1_Init(u16 arr,u16 psc)
+{
+    TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
+    TIM_OCInitTypeDef  TIM_OCInitStructure;
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);// 使能TIM1时钟
+
+    TIM_TimeBaseStructure.TIM_Period = arr; //设置在下一个更新事件装入活动的自动重装载寄存器周期的值
+    TIM_TimeBaseStructure.TIM_Prescaler =psc; //设置用来作为TIMx时钟频率除数的预分频值
+    TIM_TimeBaseStructure.TIM_ClockDivision = 0; //设置时钟分割:TDTS = Tck_tim
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;  //TIM向上计数模式
+    TIM_TimeBaseInit(TIM1, &TIM_TimeBaseStructure); //根据TIM_TimeBaseInitStruct中指定的参数初始化TIMx的时间基数单位
+
+    TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM2; //选择定时器模式:TIM脉冲宽度调制模式2
+    TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable; //比较输出使能
+    TIM_OCInitStructure.TIM_Pulse = 0; //设置待装入捕获比较寄存器的脉冲值
+    TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High; //输出极性:TIM输出比较极性高
+    TIM_OC1Init(TIM1, &TIM_OCInitStructure);  //根据TIM_OCInitStruct中指定的参数初始化外设TIMx
+
+    TIM_CtrlPWMOutputs(TIM1,ENABLE);	//MOE 主输出使能
+
+    TIM_OC1PreloadConfig(TIM1, TIM_OCPreload_Enable);  //CH1预装载使能
+
+    TIM_ARRPreloadConfig(TIM1, ENABLE); //使能TIMx在ARR上的预装载寄存器
+
+    TIM_SetCounter(TIM1,0);//设置计数初值
+
+    //TIM_Cmd(TIM1, ENABLE);  //使能TIM1
+
+}
+
+//DAC通道1输出初始化
+void Dac1_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure;
+    DAC_InitTypeDef DAC_InitType;
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE );	  //使能PORTA通道时钟
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC, ENABLE );	  //使能DAC通道时钟
+
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4;				 // 端口配置
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AIN; 		 //模拟输入
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+    GPIO_SetBits(GPIOA,GPIO_Pin_4)	;//PA.4 输出高
+
+    DAC_InitType.DAC_Trigger=DAC_Trigger_None;	//不使用触发功能 TEN1=0
+    DAC_InitType.DAC_WaveGeneration=DAC_WaveGeneration_None;//不使用波形发生
+    DAC_InitType.DAC_LFSRUnmask_TriangleAmplitude=DAC_LFSRUnmask_Bit0;//屏蔽、幅值设置
+    DAC_InitType.DAC_OutputBuffer=DAC_OutputBuffer_Enable ;	//DAC1输出缓存关闭 BOFF1=1
+    DAC_Init(DAC_Channel_1,&DAC_InitType);	 //初始化DAC通道1
+
+    DAC_Cmd(DAC_Channel_1, ENABLE);  //使能DAC1
+
+    DAC_SetChannel1Data(DAC_Align_12b_R, 0);  //12位右对齐数据格式设置DAC值
+
+}
+
+extern struct MIDI_Note MIDI_Note_1[];
+extern unsigned int Note_Freq[];
+
+int main(void)
+{
+    struct MIDI MIDI_control;
+    {
+        MIDI_control.MIDI_div2 = 0;
+        MIDI_control.MIDI_div = 0;
+        MIDI_control.MIDI_trig = 0;
+        MIDI_control.MIDI_time_sum = 0;
+        MIDI_control.MIDI_note_count = 0;
+        MIDI_control.MIDI_statu = 0;
+    }
+
+    struct VCO VCO_1;
+    {
+        VCO_1.VCO_wavetype = 1;
+        VCO_1.phase = 0;
+        VCO_1.idx = 0;
+        VCO_1.VCO_freq = 100;
+        VCO_1.VCO_Out = 0;
+    }
+
+    struct VCO VCO_2;
+    VCO_2 = VCO_1;
+
+    struct VCF VCF_1;
+    {
+        VCF_1.VCF_BW = 1000;
+        VCF_1.VCF_freq = 1000;
+        VCF_set(&VCF_1);
+        VCF_1.VCF_Out = 0;
+        VCF_1.VCF_reg1 = 0;
+        VCF_1.VCF_reg2 = 0;
+        VCF_1.VCF_type = 0;
+    }
+
+    struct ADSR  ADSR_1;
+    {
+				ADSR_1.ADSR_enable = 1;
+        ADSR_1.ADSR_statu = 0;
+        ADSR_1.ADSR_count = 0;
+        ADSR_1.ADSR_div = 0;
+        ADSR_1.A_time = 10;
+        ADSR_1.A_speed = 20;
+        ADSR_1.D_time = 0;
+        ADSR_1.D_speed = 0;
+        ADSR_1.R_time = 2;
+        ADSR_1.R_speed = 100;
+        ADSR_1.ADSR_in = 0;
+        ADSR_1.ADSR_out = 0;
+    }
+
+		struct ADSR  ADSR_2;
+    {
+				ADSR_2.ADSR_enable = 1;
+        ADSR_2.ADSR_statu = 0;
+        ADSR_2.ADSR_count = 0;
+        ADSR_2.ADSR_div = 0;
+        ADSR_2.A_time = 1;
+        ADSR_2.A_speed = 200;
+        ADSR_2.D_time = 20;
+        ADSR_2.D_speed = 10;
+        ADSR_2.R_time = 0;
+        ADSR_2.R_speed = 0;
+        ADSR_2.ADSR_in = 0;
+        ADSR_2.ADSR_out = 0;
+    }
+		
+    SystemInit();
+    delay_init();	    	 //延时函数初始化
+    TIM1_Init(65535,(72000000/200000)-1); //将72MHz分频为200kHz
+    Dac1_Init();
+
+    OLED_Init();			//初始化OLED
+    OLED_Clear();
+
+    int i = 100;
+    while(1)
+    {
+        TIM_SetCounter(TIM1,1); //设置计数初值
+        TIM_Cmd(TIM1, ENABLE);  //使能TIM1
+
+        //-------------MIDI_control-------------//
+        //MIDI_count每10ms加一，作为控制信号控制合成器其他参数
+        if(MIDI_control.MIDI_div >= 200)
+        {
+            MIDI_control.MIDI_div = 0;
+            MIDI_control.MIDI_div2++;
+            MIDI_control.MIDI_trig = 1;  //每10ms MIDI控制器触发一次
+        }
+        else
+        {
+            MIDI_control.MIDI_div++;
+        }
+
+        //MIDI_count加一时调整合成器参数
+        if(MIDI_control.MIDI_trig)
+        {
+            int temp = MIDI_control.MIDI_note_count;
+
+            //改变VCF频率
+            //VCF_1.VCF_B = ADSR_1.ADSR_out*50;
+            //void VCF_fast_set(struct VCF *VCF_1);
+
+            //播放下一个音符
+            if(MIDI_control.MIDI_statu == 1)
+            {
+                VCO_1.VCO_freq = Note_Freq[ (MIDI_Note_1[temp].note) ];  //根据音符改变VCO频率
+                VCO_2.VCO_freq = VCO_1.VCO_freq * 2;
+
+                //开启下一个音符
+                ADSR_1.ADSR_in = 1; //ADSR开启
+                ADSR_1.ADSR_reset = 0; //ADSR取消重置
+
+                MIDI_control.MIDI_statu = 0;
+
+                MIDI_control.MIDI_trig = 0;  //MID控制器每10ms只触发一次
+            }
+
+            //判断是否播放到下一个音符
+            if(MIDI_control.MIDI_div2 > MIDI_Note_1[temp].time + MIDI_control.MIDI_time_sum)   //跳转到下一音符
+            {
+                MIDI_control.MIDI_time_sum += MIDI_Note_1[temp].time;  //计算之前的音符总时长是多少
+                MIDI_control.MIDI_note_count++;  //跳转到下一个音符
+                temp = MIDI_control.MIDI_note_count;
+
+                if(temp > 11)  //播放结束，跳到乐曲头部
+                {
+                    MIDI_control.MIDI_note_count = 0;
+                    MIDI_control.MIDI_time_sum = 0;
+                    MIDI_control.MIDI_div2 = 0;
+                }
+
+                //结束上一个音符
+                ADSR_1.ADSR_in = 0; //ADSR关闭
+                ADSR_1.ADSR_reset = 1; //ADSR状态重置
+
+                MIDI_control.MIDI_statu = 1;
+            }
+
+
+            /*
+            if(MIDI_count%100 == 0)
+            {
+            VCF_1.VCF_BW = MIDI_count;
+
+            VCF_set(&VCF_1);
+            }
+            */
+            /*
+            if(MIDI_count % 20 == 1)
+            {
+            ADSR_1.ADSR_in = (ADSR_1.ADSR_in == 1 ? 0 : 1);
+            }
+            */
+
+        }
+
+        //-------------SUB_synth-------------//
+        int OUT1 = SUB_synth_default(&VCO_1, &VCF_1, &ADSR_1);
+
+        //-------------VCA & Out-------------//
+        DAC_SetChannel1Data(DAC_Align_12b_R, 2048 + OUT1/50);
+
+        while(TIM_GetCounter(TIM1) <= 10); //刷新频率20kHz
+    }
+
+
+}

@@ -1,0 +1,6 @@
+-c --cpu Cortex-M3 -D__MICROLIB -g -O0 --apcs=interwork --split_sections -I ..\HARDWARE\LED -I ..\SYSTEM\delay -I ..\SYSTEM\sys -I ..\SYSTEM\usart -I ..\USER -I ..\STM32F10x_FWLib\inc -I ..\CORE -I ..\HARDWARE\KEY -I ..\HARDWARE\OLED --c99
+-I.\RTE\_Target_1
+-IC:\Keil\ARM\PACK\ARM\CMSIS\5.7.0\CMSIS\Core\Include
+-IC:\Keil\ARM\PACK\Keil\STM32F1xx_DFP\2.1.0\Device\Include
+-D__UVISION_VERSION="530" -D_RTE_ -DSTM32F10X_HD -D_RTE_ -DUSE_STDPERIPH_DRIVER
+-o ..\obj\stm32f10x_rcc.o --omf_browse ..\obj\stm32f10x_rcc.crf --depend ..\obj\stm32f10x_rcc.d --feedback "..\OBJ\OLED.fed" "..\STM32F10x_FWLib\src\stm32f10x_rcc.c"
